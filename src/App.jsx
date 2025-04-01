@@ -9,6 +9,7 @@ function App() {
   const [error, setError] = useState(null)
   const messagesEndRef = useRef(null)
   const abortControllerRef = useRef(null)
+  const inputRef = useRef(null)
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
@@ -17,6 +18,11 @@ function App() {
   useEffect(() => {
     scrollToBottom()
   }, [messages])
+
+  // Focus input on mount
+  useEffect(() => {
+    inputRef.current?.focus()
+  }, [])
 
   // Cleanup function for ongoing requests
   useEffect(() => {
@@ -78,7 +84,6 @@ function App() {
     }, 30000) // 30 second timeout
 
     try {
-      console.log('Sending request to Ollama:', requestBody)
       const response = await fetch('/api/generate', {
         method: 'POST',
         headers: {
@@ -90,12 +95,6 @@ function App() {
 
       if (!response.ok) {
         const errorText = await response.text()
-        console.error('API Error Response:', {
-          status: response.status,
-          statusText: response.statusText,
-          body: errorText
-        })
-
         let errorMessage = 'Unknown error occurred'
         try {
           const errorJson = JSON.parse(errorText)
@@ -105,7 +104,6 @@ function App() {
             errorMessage = errorJson.error || errorText
           }
         } catch {
-          // If error text is not JSON
           if (response.status === 404) {
             errorMessage = 'Cannot connect to Ollama API. Please check if Ollama is running.'
           } else if (response.status === 500) {
@@ -117,19 +115,15 @@ function App() {
         throw new Error(errorMessage)
       }
 
-      // Handle streaming response
       const reader = response.body.getReader()
       const decoder = new TextDecoder()
       let fullResponse = ''
-      let lastUpdateTime = Date.now()
 
       while (true) {
         const { value, done } = await reader.read()
         if (done) break
 
-        // Reset timeout on each chunk
         clearTimeout(timeoutId)
-        lastUpdateTime = Date.now()
 
         const chunk = decoder.decode(value)
         const lines = chunk.split('\n')
@@ -143,10 +137,8 @@ function App() {
               }
               if (json.response) {
                 fullResponse += json.response
-                // Update the message in real-time as we receive chunks
                 setMessages(prev => {
                   const newMessages = [...prev]
-                  // Update or add the assistant's message
                   if (newMessages[newMessages.length - 1]?.role === 'assistant') {
                     newMessages[newMessages.length - 1].content = fullResponse
                   } else {
@@ -157,126 +149,158 @@ function App() {
               }
             } catch (e) {
               console.warn('Error parsing response chunk:', e)
-              console.warn('Problematic chunk:', line)
             }
           }
         }
       }
 
     } catch (error) {
-      console.error('Error details:', error)
       let errorMessage = error.message || 'Sorry, there was an error processing your request.'
       
       if (error.name === 'AbortError') {
-        errorMessage = 'Request was cancelled due to timeout. Please try again.'
+        errorMessage = 'Request was cancelled.'
       } else if (error.message.includes('Failed to fetch')) {
-        errorMessage = 'Could not connect to Ollama. Please check:\n1. Is Ollama running? Try running "ollama list"\n2. Is the model installed? Try running "ollama pull llama3.2:latest"'
-      } else if (error.message.includes('model')) {
-        errorMessage = `${error.message}\nTry running "ollama list" to see available models or "ollama pull llama3.2:latest" to install the model.`
+        errorMessage = 'Could not connect to Ollama. Please check:\n1. Is Ollama running?\n2. Is the model installed?'
       }
       
       setError(errorMessage)
-      setMessages(prev => [...prev, { role: 'assistant', content: `Error: ${errorMessage}` }])
+      setMessages(prev => [...prev, { role: 'error', content: errorMessage }])
     } finally {
       clearTimeout(timeoutId)
       setIsLoading(false)
+      inputRef.current?.focus()
     }
   }
 
   const handleCancel = () => {
     if (abortControllerRef.current) {
       abortControllerRef.current.abort()
-      setError('Request cancelled by user.')
       setIsLoading(false)
     }
   }
 
   return (
-    <div className="flex flex-col h-screen max-w-4xl mx-auto p-4">
-      <header className="text-center py-4">
-        <h1 className="text-2xl font-bold text-gray-800">Ollama Chat</h1>
-        {error && (
-          <div className="mt-2 p-2 bg-red-100 text-red-700 rounded-lg text-sm">
-            {error}
+    <div className="flex flex-col h-screen bg-gray-100">
+      {/* Header */}
+      <header className="bg-white shadow-sm">
+        <div className="max-w-4xl mx-auto px-4 py-4">
+          <div className="flex items-center justify-between">
+            <h1 className="text-xl font-semibold text-gray-800">Ollama Chat</h1>
+            <div className="flex items-center space-x-2">
+              <div className={`h-2 w-2 rounded-full ${error ? 'bg-red-500' : 'bg-green-500'}`} />
+              <span className="text-sm text-gray-600">
+                {error ? 'Disconnected' : 'Connected'}
+              </span>
+            </div>
           </div>
-        )}
+          {error && (
+            <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded-lg">
+              <p className="text-sm text-red-600">{error}</p>
+            </div>
+          )}
+        </div>
       </header>
 
-      <div className="flex-1 overflow-y-auto mb-4 space-y-4">
-        {messages.map((message, index) => (
-          <div
-            key={index}
-            className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
-          >
-            <div
-              className={`max-w-[80%] rounded-lg p-4 ${
-                message.role === 'user'
-                  ? 'bg-blue-500 text-white'
-                  : message.content.startsWith('Error:')
-                    ? 'bg-red-100 text-red-700'
-                    : 'bg-gray-200 text-gray-800'
-              }`}
-            >
-              {message.role === 'user' ? (
-                <div className="whitespace-pre-wrap">{message.content}</div>
-              ) : message.content.startsWith('Error:') ? (
-                <div className="whitespace-pre-wrap">{message.content}</div>
-              ) : (
-                <div className="prose prose-sm max-w-none dark:prose-invert">
-                  <ReactMarkdown
-                    components={{
-                      pre: ({ node, ...props }) => (
-                        <div className="overflow-auto rounded-md bg-gray-800 p-4 my-2">
-                          <pre {...props} />
-                        </div>
-                      ),
-                      code: ({ node, inline, ...props }) => (
-                        inline ? 
-                          <code className="bg-gray-700 text-gray-100 rounded px-1" {...props} /> :
-                          <code className="text-gray-100" {...props} />
-                      ),
-                    }}
-                  >
-                    {message.content}
-                  </ReactMarkdown>
+      {/* Chat Container */}
+      <div className="flex-1 overflow-hidden bg-white">
+        <div className="h-full max-w-4xl mx-auto px-4">
+          <div className="h-full overflow-y-auto py-4 space-y-6" style={{ scrollbarWidth: 'thin' }}>
+            {messages.length === 0 && (
+              <div className="flex flex-col items-center justify-center h-full text-center text-gray-500 space-y-4">
+                <div className="w-16 h-16 rounded-full bg-gray-100 flex items-center justify-center">
+                  <PaperAirplaneIcon className="h-8 w-8 text-gray-400" />
                 </div>
-              )}
-            </div>
-          </div>
-        ))}
-        {isLoading && (
-          <div className="flex justify-start">
-            <div className="bg-gray-200 rounded-lg p-4 text-gray-800 flex items-center gap-2">
-              <span>Thinking...</span>
-              <button 
-                onClick={handleCancel}
-                className="text-sm px-2 py-1 bg-red-500 text-white rounded hover:bg-red-600"
+                <div>
+                  <p className="text-lg font-medium">Welcome to Ollama Chat!</p>
+                  <p className="text-sm">Start a conversation by typing a message below.</p>
+                </div>
+              </div>
+            )}
+            
+            {messages.map((message, index) => (
+              <div
+                key={index}
+                className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
               >
-                Cancel
-              </button>
-            </div>
+                <div
+                  className={`max-w-[80%] rounded-2xl px-4 py-3 ${
+                    message.role === 'user'
+                      ? 'bg-blue-500 text-white'
+                      : message.role === 'error'
+                        ? 'bg-red-50 text-red-600 border border-red-100'
+                        : 'bg-gray-100 text-gray-800'
+                  }`}
+                >
+                  {message.role === 'user' || message.role === 'error' ? (
+                    <div className="whitespace-pre-wrap text-sm">{message.content}</div>
+                  ) : (
+                    <div className="prose prose-sm max-w-none dark:prose-invert">
+                      <ReactMarkdown
+                        components={{
+                          pre: ({ node, ...props }) => (
+                            <div className="overflow-auto rounded-lg bg-gray-800 p-4 my-2">
+                              <pre {...props} />
+                            </div>
+                          ),
+                          code: ({ node, inline, ...props }) => (
+                            inline ? 
+                              <code className="bg-gray-200 text-gray-800 rounded px-1 py-0.5 text-sm" {...props} /> :
+                              <code className="text-gray-100 text-sm" {...props} />
+                          ),
+                        }}
+                      >
+                        {message.content}
+                      </ReactMarkdown>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
+            {isLoading && (
+              <div className="flex justify-start">
+                <div className="bg-gray-100 rounded-2xl px-4 py-3 text-gray-800 flex items-center gap-2">
+                  <div className="flex space-x-1">
+                    <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                    <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                    <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                  </div>
+                  <button 
+                    onClick={handleCancel}
+                    className="text-xs px-2 py-1 bg-gray-200 text-gray-600 rounded hover:bg-gray-300 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
+            <div ref={messagesEndRef} />
           </div>
-        )}
-        <div ref={messagesEndRef} />
+        </div>
       </div>
 
-      <form onSubmit={handleSubmit} className="flex gap-2">
-        <input
-          type="text"
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          placeholder="Type your message..."
-          className="flex-1 p-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-          disabled={isLoading}
-        />
-        <button
-          type="submit"
-          disabled={isLoading || !input.trim()}
-          className="bg-blue-500 text-white p-2 rounded-lg hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          <PaperAirplaneIcon className="h-5 w-5" />
-        </button>
-      </form>
+      {/* Input Area */}
+      <div className="bg-white border-t">
+        <div className="max-w-4xl mx-auto px-4 py-4">
+          <form onSubmit={handleSubmit} className="flex gap-2">
+            <input
+              ref={inputRef}
+              type="text"
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              placeholder="Type your message..."
+              className="flex-1 p-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-shadow text-sm"
+              disabled={isLoading}
+            />
+            <button
+              type="submit"
+              disabled={isLoading || !input.trim()}
+              className="px-4 py-2 bg-blue-500 text-white rounded-xl hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              <PaperAirplaneIcon className="h-5 w-5" />
+            </button>
+          </form>
+        </div>
+      </div>
     </div>
   )
 }
