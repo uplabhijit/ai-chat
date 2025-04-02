@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { PaperAirplaneIcon } from '@heroicons/react/24/solid'
+import { PaperAirplaneIcon, Cog6ToothIcon, ArrowPathIcon, TrashIcon } from '@heroicons/react/24/solid'
 import ReactMarkdown from 'react-markdown'
 
 function App() {
@@ -7,6 +7,10 @@ function App() {
   const [input, setInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState(null)
+  const [availableModels, setAvailableModels] = useState([])
+  const [selectedModel, setSelectedModel] = useState("llama3.2:latest")
+  const [showSettings, setShowSettings] = useState(false)
+  const [temperature, setTemperature] = useState(0.7)
   const messagesEndRef = useRef(null)
   const abortControllerRef = useRef(null)
   const inputRef = useRef(null)
@@ -31,6 +35,25 @@ function App() {
         abortControllerRef.current.abort()
       }
     }
+  }, [])
+
+  // Fetch available models
+  useEffect(() => {
+    const fetchModels = async () => {
+      try {
+        const response = await fetch('/api/tags')
+        if (response.ok) {
+          const data = await response.json()
+          setAvailableModels(data.models || [])
+          if (data.models?.length > 0) {
+            setSelectedModel(data.models[0].name)
+          }
+        }
+      } catch (e) {
+        console.warn('Failed to fetch models:', e)
+      }
+    }
+    fetchModels()
   }, [])
 
   // Check if Ollama is running
@@ -70,8 +93,11 @@ function App() {
     setError(null)
 
     const requestBody = {
-      model: "llama3.2:latest",
-      prompt: userMessage
+      model: selectedModel,
+      prompt: userMessage,
+      options: {
+        temperature: parseFloat(temperature)
+      }
     }
 
     // Set up timeout
@@ -179,6 +205,22 @@ function App() {
     }
   }
 
+  const clearChat = () => {
+    setMessages([])
+  }
+
+  const refreshModels = async () => {
+    try {
+      const response = await fetch('/api/tags')
+      if (response.ok) {
+        const data = await response.json()
+        setAvailableModels(data.models || [])
+      }
+    } catch (e) {
+      console.warn('Failed to refresh models:', e)
+    }
+  }
+
   return (
     <div className="flex flex-col h-screen bg-gray-100">
       {/* Header */}
@@ -186,13 +228,72 @@ function App() {
         <div className="max-w-4xl mx-auto px-4 py-4">
           <div className="flex items-center justify-between">
             <h1 className="text-xl font-semibold text-gray-800">Ollama Chat</h1>
-            <div className="flex items-center space-x-2">
-              <div className={`h-2 w-2 rounded-full ${error ? 'bg-red-500' : 'bg-green-500'}`} />
-              <span className="text-sm text-gray-600">
-                {error ? 'Disconnected' : 'Connected'}
-              </span>
+            <div className="flex items-center space-x-4">
+              <div className="flex items-center space-x-2">
+                <div className={`h-2 w-2 rounded-full ${error ? 'bg-red-500' : 'bg-green-500'}`} />
+                <span className="text-sm text-gray-600">
+                  {error ? 'Disconnected' : 'Connected'}
+                </span>
+              </div>
+              <button
+                onClick={() => setShowSettings(!showSettings)}
+                className="p-2 text-gray-500 hover:text-gray-700 rounded-lg hover:bg-gray-100 transition-colors"
+              >
+                <Cog6ToothIcon className="h-5 w-5" />
+              </button>
             </div>
           </div>
+          {showSettings && (
+            <div className="mt-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <label className="text-sm font-medium text-gray-700">Model</label>
+                  <div className="flex items-center space-x-2">
+                    <select
+                      value={selectedModel}
+                      onChange={(e) => setSelectedModel(e.target.value)}
+                      className="text-sm border border-gray-300 rounded-md px-2 py-1"
+                    >
+                      {availableModels.map(model => (
+                        <option key={model.name} value={model.name}>
+                          {model.name}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      onClick={refreshModels}
+                      className="p-1 text-gray-500 hover:text-gray-700 rounded hover:bg-gray-200 transition-colors"
+                    >
+                      <ArrowPathIcon className="h-4 w-4" />
+                    </button>
+                  </div>
+                </div>
+                <div className="flex items-center justify-between">
+                  <label className="text-sm font-medium text-gray-700">Temperature</label>
+                  <input
+                    type="range"
+                    min="0"
+                    max="2"
+                    step="0.1"
+                    value={temperature}
+                    onChange={(e) => setTemperature(e.target.value)}
+                    className="w-32"
+                  />
+                  <span className="text-sm text-gray-600 w-12 text-right">{temperature}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <label className="text-sm font-medium text-gray-700">Chat History</label>
+                  <button
+                    onClick={clearChat}
+                    className="flex items-center space-x-1 px-2 py-1 text-sm text-red-600 hover:text-red-700 rounded hover:bg-red-50 transition-colors"
+                  >
+                    <TrashIcon className="h-4 w-4" />
+                    <span>Clear Chat</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
           {error && (
             <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded-lg">
               <p className="text-sm text-red-600">{error}</p>
