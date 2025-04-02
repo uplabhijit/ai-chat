@@ -19,6 +19,8 @@ const SUMMARY_STYLES = {
   CUSTOM: 'custom'
 }
 
+export { SUMMARY_STYLES }
+
 const SUMMARY_PROMPTS = {
   [SUMMARY_STYLES.BRIEF]: 'Please provide a brief summary of this conversation, focusing on the key points:',
   [SUMMARY_STYLES.DETAILED]: 'Please provide a detailed summary of this conversation, including all major points and their context:',

@@ -156,7 +156,9 @@ function App() {
     const updatedChat = {
       ...activeChat,
       messages,
-      updatedAt: Date.now()
+      updatedAt: Date.now(),
+      // Preserve the existing name
+      name: activeChat.name
     }
     
     setChats(prevChats => 
@@ -165,24 +167,67 @@ function App() {
       )
     )
     setActiveChat(updatedChat)
+    setMessages(messages)
   }
 
   const handleSubmit = async (e) => {
     e.preventDefault()
     if (!input.trim() || isLoading) return
 
+    const userMessage = input.trim()
+    const newUserMessage = { role: 'user', content: userMessage }
+    let currentChat = activeChat
+
     // Create new chat if none is active
-    if (!activeChat) {
-      const newChat = {
+    if (!currentChat) {
+      currentChat = {
         id: generateId(),
-        name: input.trim().slice(0, 30) || `Chat ${chats.length + 1}`,
-        messages: [],
+        name: userMessage.slice(0, 30),
+        messages: [newUserMessage],
         createdAt: Date.now(),
         updatedAt: Date.now()
       }
-      setChats(prev => [newChat, ...prev]) // Add new chat at the beginning
-      setActiveChat(newChat)
+      // Update all states synchronously for new chat
+      setChats(prev => [currentChat, ...prev])
+      setActiveChat(currentChat)
+      setMessages([newUserMessage])
+    } else if (currentChat.messages.length === 0) {
+      // If this is the first message in an existing chat, update its name
+      currentChat = {
+        ...currentChat,
+        name: userMessage.slice(0, 30),
+        messages: [newUserMessage],
+        updatedAt: Date.now()
+      }
+      // Update all states synchronously for first message
+      setChats(prev => prev.map(chat => 
+        chat.id === currentChat.id ? currentChat : chat
+      ))
+      setActiveChat(currentChat)
+      setMessages([newUserMessage])
+    } else {
+      // Regular message in existing chat
+      const newMessages = [...messages, newUserMessage]
+      currentChat = {
+        ...currentChat,
+        messages: newMessages,
+        updatedAt: Date.now()
+      }
+      // Update all states synchronously for regular message
+      setChats(prev => prev.map(chat => 
+        chat.id === currentChat.id ? currentChat : chat
+      ))
+      setActiveChat(currentChat)
+      setMessages(newMessages)
     }
+
+    // Clear input before making the API call
+    setInput('')
+    setIsLoading(true)
+    setError(null)
+
+    // Store the current chat reference for the API response
+    const chatAtTimeOfRequest = currentChat
 
     // Cancel any ongoing request
     if (abortControllerRef.current) {
@@ -192,23 +237,6 @@ function App() {
     // Create new abort controller for this request
     abortControllerRef.current = new AbortController()
     const signal = abortControllerRef.current.signal
-
-    const userMessage = input.trim()
-    setInput('')
-    const newMessages = [...messages, { role: 'user', content: userMessage }]
-    setMessages(newMessages)
-    updateChat(newMessages)
-    
-    setIsLoading(true)
-    setError(null)
-
-    const requestBody = {
-      model: selectedModel,
-      prompt: userMessage,
-      options: {
-        temperature: parseFloat(temperature)
-      }
-    }
 
     // Set up timeout
     const timeoutId = setTimeout(() => {
@@ -220,6 +248,14 @@ function App() {
     }, 30000) // 30 second timeout
 
     try {
+      const requestBody = {
+        model: selectedModel,
+        prompt: userMessage,
+        options: {
+          temperature: parseFloat(temperature)
+        }
+      }
+
       const response = await fetch('/api/generate', {
         method: 'POST',
         headers: {
@@ -273,12 +309,19 @@ function App() {
               }
               if (json.response) {
                 fullResponse += json.response
-                const updatedMessages = [
-                  ...newMessages,
-                  { role: 'assistant', content: fullResponse }
-                ]
+                const updatedMessages = [...chatAtTimeOfRequest.messages, { role: 'assistant', content: fullResponse }]
+                
+                // Update all states synchronously for API response
+                const updatedChat = {
+                  ...chatAtTimeOfRequest,
+                  messages: updatedMessages,
+                  updatedAt: Date.now()
+                }
+                setChats(prev => prev.map(chat => 
+                  chat.id === chatAtTimeOfRequest.id ? updatedChat : chat
+                ))
+                setActiveChat(updatedChat)
                 setMessages(updatedMessages)
-                updateChat(updatedMessages)
               }
             } catch (e) {
               console.warn('Error parsing response chunk:', e)
@@ -297,9 +340,19 @@ function App() {
       }
       
       setError(errorMessage)
-      const errorMessages = [...newMessages, { role: 'error', content: errorMessage }]
+      const errorMessages = [...chatAtTimeOfRequest.messages, { role: 'error', content: errorMessage }]
+      
+      // Update all states synchronously for error
+      const updatedChat = {
+        ...chatAtTimeOfRequest,
+        messages: errorMessages,
+        updatedAt: Date.now()
+      }
+      setChats(prev => prev.map(chat => 
+        chat.id === chatAtTimeOfRequest.id ? updatedChat : chat
+      ))
+      setActiveChat(updatedChat)
       setMessages(errorMessages)
-      updateChat(errorMessages)
     } finally {
       clearTimeout(timeoutId)
       setIsLoading(false)
@@ -317,14 +370,15 @@ function App() {
   const handleNewChat = () => {
     const newChat = {
       id: generateId(),
-      name: `Chat ${chats.length + 1}`,
+      name: 'New Chat',
       messages: [],
       createdAt: Date.now(),
       updatedAt: Date.now()
     }
-    setChats(prev => [newChat, ...prev]) // Add new chat at the beginning
+    setChats(prev => [newChat, ...prev])
     setActiveChat(newChat)
     setMessages([])
+    setInput('')
     inputRef.current?.focus()
   }
 
