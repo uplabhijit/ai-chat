@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { PaperAirplaneIcon, Cog6ToothIcon, ArrowPathIcon, TrashIcon, Bars3Icon } from '@heroicons/react/24/solid'
+import { PaperAirplaneIcon, Cog6ToothIcon, ArrowPathIcon, TrashIcon, Bars3Icon, ArrowDownTrayIcon, ArrowUpTrayIcon } from '@heroicons/react/24/solid'
 import ReactMarkdown from 'react-markdown'
 import ChatList from './components/ChatList'
 import { 
@@ -10,6 +10,10 @@ import {
   loadActiveChat,
   exportChat,
   importChat,
+  exportAllChats,
+  importAllChats,
+  clearAllData,
+  getStorageStats,
   loadSettings,
   saveSettings
 } from './utils/storage'
@@ -32,6 +36,7 @@ function App() {
   const [showSidebar, setShowSidebar] = useState(savedSettings.showSidebar !== false) // default to true if not set
   const [chats, setChats] = useState(initialChats)
   const [activeChat, setActiveChat] = useState(initialActiveChat)
+  const [storageStats, setStorageStats] = useState(getStorageStats())
   
   const messagesEndRef = useRef(null)
   const abortControllerRef = useRef(null)
@@ -60,6 +65,21 @@ function App() {
       localStorage.removeItem('ollama-active-chat')
     }
   }, [activeChat])
+
+  // Add storage stats update effect
+  useEffect(() => {
+    const updateStorageStats = () => {
+      setStorageStats(getStorageStats())
+    }
+
+    // Update stats when chats change
+    updateStorageStats()
+
+    // Update stats periodically
+    const interval = setInterval(updateStorageStats, 60000) // Update every minute
+
+    return () => clearInterval(interval)
+  }, [chats])
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
@@ -423,6 +443,96 @@ function App() {
                       className="w-32"
                     />
                     <span className="text-sm text-gray-600 w-12 text-right">{temperature}</span>
+                  </div>
+
+                  {/* Storage Management Section */}
+                  <div className="pt-2 border-t">
+                    <h3 className="text-sm font-medium text-gray-700 mb-2">Storage Management</h3>
+                    <div className="space-y-2">
+                      {/* Storage Stats */}
+                      <div className="text-xs text-gray-500 space-y-1">
+                        <div className="flex justify-between">
+                          <span>Total Chats:</span>
+                          <span>{storageStats.totalChats}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>Total Messages:</span>
+                          <span>{storageStats.totalMessages}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>Storage Used:</span>
+                          <span>{(storageStats.storageUsed / 1024 / 1024).toFixed(2)} MB</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>Last Backup:</span>
+                          <span>
+                            {storageStats.lastBackup 
+                              ? new Date(parseInt(storageStats.lastBackup)).toLocaleString()
+                              : 'Never'}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Storage Actions */}
+                      <div className="flex flex-col space-y-2">
+                        <button
+                          onClick={() => {
+                            try {
+                              exportAllChats()
+                            } catch (error) {
+                              setError(error.message)
+                            }
+                          }}
+                          className="text-sm px-3 py-1 bg-blue-50 text-blue-600 rounded hover:bg-blue-100 transition-colors flex items-center justify-center gap-1"
+                        >
+                          <ArrowDownTrayIcon className="h-4 w-4" />
+                          Export All Chats
+                        </button>
+
+                        <label className="text-sm px-3 py-1 bg-blue-50 text-blue-600 rounded hover:bg-blue-100 transition-colors flex items-center justify-center gap-1 cursor-pointer">
+                          <ArrowUpTrayIcon className="h-4 w-4" />
+                          Import All Chats
+                          <input
+                            type="file"
+                            accept=".json"
+                            className="hidden"
+                            onChange={async (e) => {
+                              const file = e.target.files?.[0]
+                              if (file) {
+                                try {
+                                  const data = await importAllChats(file)
+                                  setChats(data.chats)
+                                  if (data.settings) {
+                                    setSelectedModel(data.settings.selectedModel || selectedModel)
+                                    setTemperature(data.settings.temperature || temperature)
+                                  }
+                                  setError(null)
+                                } catch (error) {
+                                  setError(error.message)
+                                }
+                              }
+                              e.target.value = '' // Reset input
+                            }}
+                          />
+                        </label>
+
+                        <button
+                          onClick={() => {
+                            if (confirm('Are you sure you want to clear all data? This cannot be undone.')) {
+                              clearAllData()
+                              setChats([])
+                              setActiveChat(null)
+                              setMessages([])
+                              setError(null)
+                            }
+                          }}
+                          className="text-sm px-3 py-1 bg-red-50 text-red-600 rounded hover:bg-red-100 transition-colors flex items-center justify-center gap-1"
+                        >
+                          <TrashIcon className="h-4 w-4" />
+                          Clear All Data
+                        </button>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
