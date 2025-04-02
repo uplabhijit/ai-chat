@@ -15,7 +15,10 @@ import {
   clearAllData,
   getStorageStats,
   loadSettings,
-  saveSettings
+  saveSettings,
+  generateChatSummary,
+  addSummaryToHistory,
+  SUMMARY_STYLES
 } from './utils/storage'
 
 function App() {
@@ -37,6 +40,11 @@ function App() {
   const [chats, setChats] = useState(initialChats)
   const [activeChat, setActiveChat] = useState(initialActiveChat)
   const [storageStats, setStorageStats] = useState(getStorageStats())
+  const [summaryThreshold, setSummaryThreshold] = useState(savedSettings.summaryThreshold || 24) // hours
+  const [summaryStyle, setSummaryStyle] = useState(savedSettings.summaryStyle || SUMMARY_STYLES.BRIEF)
+  const [isGeneratingSummary, setIsGeneratingSummary] = useState(false)
+  const [customPrompt, setCustomPrompt] = useState(savedSettings.customPrompt || '')
+  const [showSummaryHistory, setShowSummaryHistory] = useState(false)
   
   const messagesEndRef = useRef(null)
   const abortControllerRef = useRef(null)
@@ -47,9 +55,12 @@ function App() {
     saveSettings({
       selectedModel,
       temperature,
-      showSidebar
+      showSidebar,
+      summaryThreshold,
+      summaryStyle,
+      customPrompt
     })
-  }, [selectedModel, temperature, showSidebar])
+  }, [selectedModel, temperature, showSidebar, summaryThreshold, summaryStyle, customPrompt])
 
   // Save chats when they change
   useEffect(() => {
@@ -164,12 +175,12 @@ function App() {
     if (!activeChat) {
       const newChat = {
         id: generateId(),
-        name: input.trim().slice(0, 30),
+        name: input.trim().slice(0, 30) || `Chat ${chats.length + 1}`,
         messages: [],
         createdAt: Date.now(),
         updatedAt: Date.now()
       }
-      setChats(prev => [...prev, newChat])
+      setChats(prev => [newChat, ...prev]) // Add new chat at the beginning
       setActiveChat(newChat)
     }
 
@@ -306,12 +317,12 @@ function App() {
   const handleNewChat = () => {
     const newChat = {
       id: generateId(),
-      name: 'New Chat',
+      name: `Chat ${chats.length + 1}`,
       messages: [],
       createdAt: Date.now(),
       updatedAt: Date.now()
     }
-    setChats(prev => [...prev, newChat])
+    setChats(prev => [newChat, ...prev]) // Add new chat at the beginning
     setActiveChat(newChat)
     setMessages([])
     inputRef.current?.focus()
@@ -353,6 +364,60 @@ function App() {
       setMessages([])
     }
   }
+
+  const handleGenerateSummary = async (style = summaryStyle) => {
+    if (!activeChat || isGeneratingSummary) return;
+    
+    setIsGeneratingSummary(true);
+    setError('Generating summary...');
+    
+    try {
+      const summary = await generateChatSummary(
+        activeChat.messages, 
+        style, 
+        selectedModel,
+        style === SUMMARY_STYLES.CUSTOM ? customPrompt : undefined
+      );
+      
+      if (summary) {
+        // Add summary to history
+        const updatedChat = addSummaryToHistory(activeChat, summary);
+        setActiveChat(updatedChat);
+        setChats(prev => prev.map(chat => 
+          chat.id === updatedChat.id ? updatedChat : chat
+        ));
+
+        const updatedMessages = [
+          ...activeChat.messages,
+          {
+            role: 'assistant',
+            content: `\n---\n**Summary (${style}):**\n${summary.content}\n---\n\nHow can I help you continue this conversation?`
+          }
+        ];
+        setMessages(updatedMessages);
+        updateChat(updatedMessages);
+      }
+    } catch (error) {
+      setError('Failed to generate summary: ' + error.message);
+    } finally {
+      setIsGeneratingSummary(false);
+    }
+  };
+
+  const loadChat = async (chatId) => {
+    const chat = chats.find(c => c.id === chatId);
+    if (chat) {
+      setActiveChatId(chatId);
+      setMessages(chat.messages);
+      setInput('');
+
+      // Check if chat is older than the threshold
+      const chatAge = Date.now() - chat.createdAt;
+      if (chatAge > summaryThreshold * 60 * 60 * 1000) {
+        await handleGenerateSummary();
+      }
+    }
+  };
 
   return (
     <div className="flex h-screen bg-gray-100">
@@ -443,6 +508,103 @@ function App() {
                       className="w-32"
                     />
                     <span className="text-sm text-gray-600 w-12 text-right">{temperature}</span>
+                  </div>
+
+                  {/* Summary Settings */}
+                  <div className="pt-2 border-t">
+                    <h3 className="text-sm font-medium text-gray-700 mb-2">Summary Settings</h3>
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between">
+                        <label className="text-sm font-medium text-gray-700">Summary Threshold (hours)</label>
+                        <input
+                          type="number"
+                          min="1"
+                          max="168"
+                          value={summaryThreshold}
+                          onChange={(e) => setSummaryThreshold(parseInt(e.target.value))}
+                          className="w-20 text-sm border border-gray-300 rounded-md px-2 py-1"
+                        />
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <label className="text-sm font-medium text-gray-700">Summary Style</label>
+                        <select
+                          value={summaryStyle}
+                          onChange={(e) => setSummaryStyle(e.target.value)}
+                          className="text-sm border border-gray-300 rounded-md px-2 py-1"
+                        >
+                          <option value={SUMMARY_STYLES.BRIEF}>Brief</option>
+                          <option value={SUMMARY_STYLES.DETAILED}>Detailed</option>
+                          <option value={SUMMARY_STYLES.TOPIC_BASED}>Topic-based</option>
+                          <option value={SUMMARY_STYLES.CUSTOM}>Custom</option>
+                        </select>
+                      </div>
+                      {summaryStyle === SUMMARY_STYLES.CUSTOM && (
+                        <div className="space-y-2">
+                          <label className="text-sm font-medium text-gray-700">Custom Prompt</label>
+                          <textarea
+                            value={customPrompt}
+                            onChange={(e) => setCustomPrompt(e.target.value)}
+                            placeholder="Enter your custom summary prompt..."
+                            className="w-full text-sm border border-gray-300 rounded-md px-2 py-1 h-20 resize-none"
+                          />
+                        </div>
+                      )}
+                      {activeChat && (
+                        <div className="flex flex-col space-y-2">
+                          <button
+                            onClick={() => handleGenerateSummary()}
+                            disabled={isGeneratingSummary}
+                            className="text-sm px-3 py-1 bg-blue-50 text-blue-600 rounded hover:bg-blue-100 transition-colors flex items-center justify-center gap-1 disabled:opacity-50"
+                          >
+                            {isGeneratingSummary ? (
+                              <>
+                                <ArrowPathIcon className="h-4 w-4 animate-spin" />
+                                Generating Summary...
+                              </>
+                            ) : (
+                              <>
+                                <ArrowPathIcon className="h-4 w-4" />
+                                Generate Summary Now
+                              </>
+                            )}
+                          </button>
+                          
+                          {/* Summary History */}
+                          {activeChat.summaryHistory?.length > 0 && (
+                            <div className="mt-2">
+                              <button
+                                onClick={() => setShowSummaryHistory(!showSummaryHistory)}
+                                className="text-sm text-gray-600 hover:text-gray-800 flex items-center gap-1"
+                              >
+                                <ArrowPathIcon className="h-4 w-4" />
+                                View Summary History
+                              </button>
+                              {showSummaryHistory && (
+                                <div className="mt-2 space-y-2">
+                                  {activeChat.summaryHistory.map((summary, index) => (
+                                    <div key={index} className="text-xs bg-gray-50 p-2 rounded">
+                                      <div className="flex justify-between text-gray-500 mb-1">
+                                        <span>{summary.style}</span>
+                                        <span>{new Date(summary.timestamp).toLocaleString()}</span>
+                                      </div>
+                                      <div className="text-gray-700">{summary.content}</div>
+                                      <div className="mt-1 flex justify-end">
+                                        <button
+                                          onClick={() => handleGenerateSummary(summary.style)}
+                                          className="text-blue-600 hover:text-blue-800 text-xs"
+                                        >
+                                          Regenerate
+                                        </button>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
                   </div>
 
                   {/* Storage Management Section */}

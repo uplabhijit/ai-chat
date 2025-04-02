@@ -11,6 +11,21 @@ const MAX_MESSAGES_PER_CHAT = 100 // Maximum number of messages per chat
 const BACKUP_INTERVAL = 1000 * 60 * 5 // 5 minutes
 const MAX_STORAGE_SIZE = 1024 * 1024 * 10 // 10MB
 
+// Summary configuration
+const SUMMARY_STYLES = {
+  BRIEF: 'brief',
+  DETAILED: 'detailed',
+  TOPIC_BASED: 'topic-based',
+  CUSTOM: 'custom'
+}
+
+const SUMMARY_PROMPTS = {
+  [SUMMARY_STYLES.BRIEF]: 'Please provide a brief summary of this conversation, focusing on the key points:',
+  [SUMMARY_STYLES.DETAILED]: 'Please provide a detailed summary of this conversation, including all major points and their context:',
+  [SUMMARY_STYLES.TOPIC_BASED]: 'Please analyze this conversation and provide a summary organized by main topics discussed:',
+  [SUMMARY_STYLES.CUSTOM]: '' // Will be filled by user input
+}
+
 export const generateId = () => {
   return Date.now().toString(36) + Math.random().toString(36).substr(2)
 }
@@ -49,7 +64,9 @@ export const saveChats = (chats) => {
 export const loadChats = () => {
   try {
     const chats = localStorage.getItem(STORAGE_KEYS.CHATS)
-    return chats ? JSON.parse(chats) : []
+    const parsedChats = chats ? JSON.parse(chats) : []
+    // Sort chats by most recent first
+    return parsedChats.sort((a, b) => b.updatedAt - a.updatedAt)
   } catch (error) {
     console.error('Error loading chats:', error)
     // If main storage is corrupted, try loading from backup
@@ -218,4 +235,55 @@ export const getStorageStats = () => {
   }
 
   return stats
-} 
+}
+
+// Add summary history to chat structure
+export const addSummaryToHistory = (chat, summary) => {
+  if (!chat.summaryHistory) {
+    chat.summaryHistory = [];
+  }
+  chat.summaryHistory.push({
+    ...summary,
+    timestamp: Date.now()
+  });
+  // Keep only last 5 summaries
+  chat.summaryHistory = chat.summaryHistory.slice(-5);
+  return chat;
+};
+
+// Generate a summary of chat history
+export const generateChatSummary = async (messages, style = SUMMARY_STYLES.BRIEF, model = 'llama3.2', customPrompt = '') => {
+  try {
+    const prompt = style === SUMMARY_STYLES.CUSTOM && customPrompt 
+      ? customPrompt 
+      : SUMMARY_PROMPTS[style];
+
+    const response = await fetch('/api/generate', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model,
+        prompt: `${prompt}\n\n${messages.map(m => `${m.role}: ${m.content}`).join('\n')}`,
+        stream: false,
+        context: []
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error('Failed to generate summary');
+    }
+
+    const data = await response.json();
+    return {
+      content: data.response,
+      style,
+      customPrompt: style === SUMMARY_STYLES.CUSTOM ? customPrompt : undefined,
+      timestamp: Date.now()
+    };
+  } catch (error) {
+    console.error('Error generating summary:', error);
+    return null;
+  }
+}; 
