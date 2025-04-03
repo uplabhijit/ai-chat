@@ -1,0 +1,206 @@
+# Cursor Rules for Ollama Chat React Project
+
+# Language settings
+language_settings:
+  javascript:
+    dialect: jsx
+    formatter: prettier
+  typescript:
+    dialect: tsx
+    formatter: prettier
+
+# File associations
+file_associations:
+  "*.jsx": javascript
+  "*.js": javascript
+  "*.tsx": typescript
+  "*.ts": typescript
+  "*.css": css
+  "*.json": json
+
+# Ignore patterns
+ignore:
+  - node_modules/
+  - build/
+  - dist/
+  - .git/
+  - coverage/
+  - "*.log"
+  - "*.lock"
+
+# Code style
+code_style:
+  javascript:
+    indent_size: 2
+    max_line_length: 100
+    quote_type: single
+    semicolons: true
+    trailing_comma: es5
+  typescript:
+    indent_size: 2
+    max_line_length: 100
+    quote_type: single
+    semicolons: true
+    trailing_comma: es5
+    prefer_interfaces: true
+    avoid_enums: true
+    functional_style: true
+
+# Naming conventions
+naming_conventions:
+  directories: kebab-case
+  components: PascalCase
+  functions: camelCase
+  variables:
+    prefix_booleans: true  # isLoading, hasError
+    descriptive: true
+  origin_ui:
+    components: Origin${ComponentName}  # e.g., OriginButton
+    hooks: use${HookName}  # e.g., useOriginTheme
+    contexts: Origin${ContextName}Context  # e.g., OriginThemeContext
+    providers: Origin${ProviderName}Provider  # e.g., OriginThemeProvider
+
+# Component structure
+component_structure:
+  order:
+    - imports
+    - types
+    - constants
+    - state
+    - effects
+    - handlers
+    - render
+  origin_ui_order:
+    - origin-ui imports
+    - other imports
+    - types/interfaces
+    - constants
+    - component props
+    - hooks
+    - handlers
+    - render
+
+# Import organization
+import_organization:
+  groups:
+    - react
+    - origin-ui
+    - external
+    - components
+    - hooks
+    - utils
+    - styles
+
+# Framework specific
+react:
+  preferred_libraries:
+    - react-router-dom
+    - react-query
+    - react-hook-form
+    - origin-ui
+    - tailwindcss
+  performance:
+    use_suspense: true
+    use_memo: true
+    use_callback: true
+    dynamic_imports: true
+    lazy_loading: true
+    chunking_strategy:
+      enabled: true
+      max_chunk_size: 250KB
+
+# Origin UI specific
+origin_ui:
+  theme:
+    use_design_tokens: true
+    enforce_semantic_colors: true
+    enforce_spacing_scale: true
+    enforce_typography_scale: true
+  components:
+    prefer_composition: true
+    enforce_props_interface: true
+    enforce_aria_props: true
+  patterns:
+    compound_components: true
+    render_props: true
+    controlled_components: true
+  hooks:
+    prefer_origin_hooks: true
+    enforce_hook_naming: true
+
+# Performance
+performance:
+  warn_large_bundles: true
+  max_bundle_size: 500KB
+  image_optimization:
+    preferred_format: webp
+    require_size_attributes: true
+    lazy_loading: true
+  web_vitals:
+    lcp_threshold: 2.5
+    cls_threshold: 0.1
+    fid_threshold: 100
+  code_splitting:
+    enabled: true
+    dynamic_imports: true
+
+# Accessibility
+accessibility:
+  enforce_aria_labels: true
+  enforce_alt_text: true
+  enforce_semantic_markup: true
+  enforce_keyboard_navigation: true
+  enforce_focus_management: true
+
+# Security
+security:
+  prevent_dangerous_apis: true
+  prevent_inline_scripts: true
+  enforce_strict_props: true
+  prevent_xss: true
+
+# Testing
+testing:
+  test_file_pattern: "**/*.test.{js,jsx,ts,tsx}"
+  coverage_threshold: 80
+  react_testing_library: true
+  jest: true
+  component_testing:
+    enforce_accessibility_tests: true
+    enforce_interaction_tests: true
+    enforce_theme_tests: true
+
+# Documentation
+documentation:
+  require_component_docs: true
+  require_function_docs: true
+  require_prop_types: true
+  typescript:
+    require_interfaces: true
+    require_type_annotations: true
+  origin_ui:
+    require_theme_docs: true
+    require_accessibility_docs: true
+    require_composition_docs: true
+
+# Development practices
+development:
+  functional_programming:
+    prefer_pure_functions: true
+    avoid_classes: true
+    use_immutability: true
+  code_organization:
+    max_file_length: 300
+    single_responsibility: true
+    modular_structure: true
+  tailwind:
+    mobile_first: true
+    use_design_tokens: true
+    prefer_utility_classes: true
+    integrate_with_origin: true
+  vite:
+    optimize_deps: true
+    build_optimization:
+      minify: true
+      chunk_size_warning: 250
+      dynamic_import_vars: true
